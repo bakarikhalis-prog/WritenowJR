@@ -2334,6 +2334,24 @@
   .td-tabs span.on { color: var(--pencil); }
   .td-tabind { position: absolute; top: -1px; height: 2px; background: var(--pencil); transition: left .4s var(--ease-out), width .4s var(--ease-out); }
 
+  /* ---------- Shared devices: the start screen and Save and finish ----------
+     Opaque on purpose: the screen behind may still hold the last student's work. */
+  #gateSheet { position: fixed; inset: 0; z-index: 400; display: none;
+    background: rgb(var(--stock-rgb)); align-items: center; justify-content: center; padding: 16px; }
+  #gateSheet.open { display: flex; }
+  .gate-card { border-radius: 16px; width: min(460px, 100%); padding: 22px 20px 20px; }
+  .gate-kick { font-family: var(--font-ui); font-size: 0.6471rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pencil); margin-bottom: 4px; }
+  .gate-p { font-family: var(--font-page); font-size: 0.9412rem; line-height: 1.5; color: var(--ink); margin: 10px 0 0; }
+  .gate-p b { overflow-wrap: anywhere; }
+  .gate-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .gate-input { width: 100%; margin-top: 12px; }
+  .fork-btn.primary-fork { border-color: var(--pencil); background: rgb(var(--pencil-rgb) / 0.10); }
+  .fork-btn.danger-fork { border-color: var(--red); }
+  .fork-btn.danger-fork .fork-k { color: var(--red); }
+  #gateNote { margin-top: 12px; }
+  #gateNote:empty { display: none; }
+  .finish-btn { white-space: nowrap; }
+
   /* ---------- The bookshelf ---------- */
   #shelfSheet { position: fixed; inset: 0; z-index: 205; display: none;
     background: rgba(0,0,0,0.45); align-items: flex-end; justify-content: center; }
@@ -2431,6 +2449,7 @@
           <button class="tab-btn" id="tabLearn">Learn</button>
         </div>
         <button class="guide-toggle" id="courseBadge" style="display:none">Lesson 1</button>
+        <button class="guide-toggle finish-btn" id="finishBtn" style="display:none">Save &amp; finish</button>
         <span class="save" id="saveState"><span class="dot"></span>Auto-save on</span>
         <button class="mast-icon" id="shelfBtn" aria-label="Your books" title="Your books">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -2579,9 +2598,14 @@
           <p><b>Pacing.</b> One or two lessons fit a class period, with time to write. The app checks most tasks itself and moves the student on when the task is done, so a class can work at different speeds without anyone waiting.</p>
           <p><b>Privacy.</b> There are no accounts, no internet connection and no data collection. Nothing a student writes leaves the device unless they copy or save it themselves.</p>
           <p><b>Handing in work.</b> In the Book tab, a student can copy the whole piece or save it as a file that opens in any browser and prints cleanly. From the books button, Export this book saves a single book as a file you can collect.</p>
-          <p><b>Shared devices.</b> Each student can keep their own book on the shelf, but the course, the schedule and the daily word count belong to the device. One device per student works best.</p>
+          <p><b>Shared devices.</b> If students take turns on a device, choose “Students take turns” the first time the app opens, or switch it on below. Each student's work then lives in a file they keep, not on the device. Have them save it somewhere that's theirs: their school Google Drive or OneDrive, a USB stick, or a class folder you collect. On Chromebooks where students sign in with their own account, each account already keeps its own work.</p>
           <p><b>Getting unstuck.</b> The Learn tab has every lesson, a search that takes questions in a student's own words, and a list of the troubles students hit most. The ? beside each chapter prompt opens the lessons for that part of the writing.</p>
         </div>
+      </div>
+      <div class="set-card" data-cat="teachers">
+        <h3>This device</h3>
+        <div id="teacherDevice"></div>
+        <div class="set-row-cap" style="margin:8px 0 0">When students take turns, the app opens on a start screen. Each student opens the file they saved last time, or starts new. When they're done, Save and finish saves one file holding their writing, their lessons and where they are, then clears the device for the next student.</div>
       </div>
       <div class="set-card" data-cat="teachers">
         <h3>Printable lesson sheets</h3>
@@ -2766,6 +2790,16 @@
 
   <!-- The bookshelf: every book, grouped by series, and the way to start,
        import, export or delete one. -->
+  <div id="gateSheet" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="ms-card gate-card">
+      <div class="gate-kick" id="gateKick">WriteNow Jr.</div>
+      <h2 class="shelf-title" id="gateTitle"></h2>
+      <div id="gateBody"></div>
+      <div class="gate-actions" id="gateActions"></div>
+      <div class="set-note" id="gateNote"></div>
+      <input type="file" id="gateFile" accept=".json,application/json,text/plain" style="display:none" />
+    </div>
+  </div>
   <div id="shelfSheet" role="dialog" aria-modal="true" aria-labelledby="shelfTitle">
     <div class="ms-card shelf-card">
       <div class="shelf-top">
@@ -3752,6 +3786,258 @@
       shelfNote("This browser won't save files. A full backup in Settings has every book in it.", true);
     }
   }
+  /* ---------- Shared devices (WriteNow Jr.) ----------
+     In a classroom where students take turns on one device, nothing should be
+     left on it between them. Each student's file carries everything: their
+     books, which lesson they are on, their writing days and which walkthroughs
+     they have seen. The device keeps one thing of its own: whether it is
+     shared. A shared device opens on a start screen, and Save and finish
+     saves the student's file and, once they have checked it is there, clears
+     the device for the next student. Only the kids' edition offers this. */
+  var DEVICE_KEY = STORAGE_KEY.replace(":v1", ":device");
+  var TUTORIAL_KEY = STORAGE_KEY.replace(":v1", ":tutorial:seen");
+  var deviceClearing = false;
+  function deviceInfo() {
+    try { return JSON.parse(localStorage.getItem(DEVICE_KEY) || "null"); } catch (e) { return null; }
+  }
+  function setDeviceInfo(d) { try { localStorage.setItem(DEVICE_KEY, JSON.stringify(d)); } catch (e) {} }
+  function sharedDevice() { if (EDITION !== "jr") return false; var d = deviceInfo(); return !!(d && d.shared); }
+  /* True while the first-open question or the start screen is due, so the
+     intro waits for it instead of opening underneath. */
+  function sharedGatePending() {
+    if (EDITION !== "jr") return false;
+    var d = deviceInfo();
+    return !d || !!d.shared;
+  }
+  function deviceHasWork() {
+    var t = allBooksTotals();
+    return t.words > 0 || t.chapters > 0 || t.notes > 0 || t.codex > 0 || !!(state.course && state.course.enrolled);
+  }
+  function studentName() { return String(state.student || "").trim(); }
+  function studentFileName(tag) {
+    var d = new Date(), p2 = function (n) { return ("0" + n).slice(-2); };
+    var who = studentName().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my";
+    return who + "-writenow-jr" + (tag ? "-" + tag : "") + "-" + d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + ".json";
+  }
+  function idbClearAll() {
+    return idbOpen().then(function (db) {
+      return new Promise(function (resolve) {
+        if (!db) { resolve(false); return; }
+        try {
+          var tx = db.transaction(IDB_STORE, "readwrite");
+          tx.objectStore(IDB_STORE).clear();
+          tx.oncomplete = function () { resolve(true); };
+          tx.onerror = tx.onabort = function () { resolve(false); };
+        } catch (e) { resolve(false); }
+      });
+    }).catch(function () { return false; });
+  }
+  /* Everything this student left on the device goes. The page reloads so no
+     screen, cache or half-open sheet can carry anything across. */
+  function clearDevice() {
+    deviceClearing = true;
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    [STORAGE_KEY, TOURS_KEY, TUTORIAL_KEY, SEEDED_FLAG].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+    var d = deviceInfo() || {};
+    d.shared = true; d.active = false;
+    setDeviceInfo(d);
+    idbClearAll().then(function () { location.reload(); });
+  }
+  /* Saves the student's file. Where the browser offers a save dialog, the
+     student picks the place (on a Chromebook that includes Google Drive);
+     elsewhere it downloads. cb(ok, name). */
+  function saveStudentFile(tag, cb) {
+    var name = studentFileName(tag), txt = backupJSON();
+    function download() {
+      try {
+        var blob = new Blob([txt], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = name;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        cb(true, name);
+      } catch (e) { cb(false, name); }
+    }
+    if (typeof window.showSaveFilePicker === "function" && window.self === window.top) {
+      window.showSaveFilePicker({ suggestedName: name, types: [{ description: "WriteNow Jr. work", accept: { "application/json": [".json"] } }] })
+        .then(function (h) {
+          return h.createWritable().then(function (w) { return w.write(txt).then(function () { return w.close(); }); })
+            .then(function () { cb(true, h.name || name); });
+        })
+        .catch(function (e) { if (e && e.name === "AbortError") cb(false, null, true); else download(); });
+    } else download();
+  }
+
+  var gateMode = null;
+  function gateEl(id) { return document.getElementById(id); }
+  function gateOpen(mode) {
+    gateMode = mode;
+    gateEl("gateSheet").classList.add("open");
+    gateEl("gateSheet").setAttribute("data-mode", mode);
+    renderGate();
+  }
+  function gateClose() {
+    gateMode = null;
+    gateEl("gateSheet").classList.remove("open");
+  }
+  function gateNote(t, bad) {
+    var n = gateEl("gateNote");
+    n.textContent = t || "";
+    n.className = "set-note" + (t ? (bad ? " err" : " ok") : "");
+  }
+  function gateButton(host, k, d, fn, cls) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "fork-btn" + (cls ? " " + cls : "");
+    var a = document.createElement("span"); a.className = "fork-k"; a.textContent = k; b.appendChild(a);
+    if (d) { var s = document.createElement("span"); s.className = "fork-d"; s.textContent = d; b.appendChild(s); }
+    b.addEventListener("click", fn);
+    host.appendChild(b);
+    return b;
+  }
+  function renderGate() {
+    var title = gateEl("gateTitle"), body = gateEl("gateBody"), acts = gateEl("gateActions");
+    var kick = gateEl("gateKick");
+    body.innerHTML = ""; acts.innerHTML = ""; gateNote("");
+    kick.textContent = "WriteNow Jr.";
+    var p = function (t) { var e = document.createElement("p"); e.className = "gate-p"; e.textContent = t; body.appendChild(e); return e; };
+    var d = deviceInfo() || {};
+    if (gateMode === "ask") {
+      title.textContent = "Who uses this device?";
+      p("This helps the app keep everyone's writing in the right place. A teacher can change it later in Settings.");
+      gateButton(acts, "Just me", "My own tablet or computer.", function () {
+        setDeviceInfo({ shared: false });
+        gateClose(); applySharedChrome();
+        if (!deviceHasWork() && startIntroTour) startIntroTour();
+      });
+      gateButton(acts, "Students take turns", "A class set, a library computer, a shared iPad.", function () {
+        setDeviceInfo({ shared: true, active: deviceHasWork() });
+        applySharedChrome(); gateOpen("start");
+      });
+      return;
+    }
+    if (gateMode === "start" && d.active && deviceHasWork()) {
+      var who = studentName() || "Someone";
+      title.textContent = who === "Someone" ? "Someone's work is still open" : who + "'s work is still open";
+      p("They didn't tap Save and finish last time.");
+      gateButton(acts, who === "Someone" ? "It's mine. Keep going" : "I'm " + who + (/[.!?]$/.test(who) ? "" : ".") + " Keep going", "Pick up right where you left off.", function () {
+        gateClose(); renderCourseBadge(); setView(state.settings.lastView || "map");
+      });
+      gateButton(acts, "Save it for them and start fresh", "Their work is saved as a file on this device for your teacher, then cleared.", function () {
+        saveStudentFile("not-finished", function (ok, name) {
+          if (!ok) { gateNote("That didn't save, so nothing was cleared. Ask your teacher.", true); return; }
+          gateNote("Saved " + name + ". Clearing…");
+          setTimeout(clearDevice, 900);
+        });
+      });
+      return;
+    }
+    if (gateMode === "start") {
+      title.textContent = "Who's writing?";
+      p("Open the file you saved last time and everything comes back: your writing, your lessons, and where you were.");
+      gateButton(acts, "Open my work", "Pick the file you saved last time.", function () { gateEl("gateFile").click(); }, "primary-fork");
+      gateButton(acts, "I'm new here", "Start your first piece.", function () { gateOpen("name"); });
+      return;
+    }
+    if (gateMode === "name") {
+      title.textContent = "What's your name?";
+      p("Your first name and the first letter of your last name. It goes on your file so your teacher knows it's yours.");
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.className = "shelf-input gate-input"; inp.id = "gateName";
+      inp.placeholder = "Maya R."; inp.maxLength = 30; inp.autocomplete = "off";
+      body.appendChild(inp);
+      var go = gateButton(acts, "Start", "", function () {
+        var nm = inp.value.trim();
+        if (!nm) { gateNote("Type your name first.", true); inp.focus(); return; }
+        state.student = nm;
+        var dd = deviceInfo() || {}; dd.shared = true; dd.active = true; setDeviceInfo(dd);
+        save(); gateClose();
+        if (startIntroTour) startIntroTour();
+      }, "primary-fork");
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") go.click(); });
+      gateButton(acts, "Back", "", function () { gateOpen("start"); });
+      setTimeout(function () { inp.focus(); }, 60);
+      return;
+    }
+    if (gateMode === "finish") {
+      title.textContent = "Save and finish";
+      kick.textContent = studentName() || "WriteNow Jr.";
+      p("Your file holds everything: your writing, your lessons, and where you are in them. Next time, open it and pick up where you left off.");
+      p("Save it somewhere that's yours, like your school Google Drive or OneDrive, a USB stick, or wherever your teacher tells you.");
+      if (!studentName()) {
+        var ni = document.createElement("input");
+        ni.type = "text"; ni.className = "shelf-input gate-input"; ni.id = "gateName";
+        ni.placeholder = "Your name, like Maya R."; ni.maxLength = 30;
+        body.appendChild(ni);
+      }
+      gateButton(acts, "Save my file", "", function () {
+        var ni2 = gateEl("gateName");
+        if (ni2) {
+          if (!ni2.value.trim()) { gateNote("Type your name first.", true); ni2.focus(); return; }
+          state.student = ni2.value.trim(); save();
+        }
+        saveStudentFile("", function (ok, name, cancelled) {
+          if (cancelled) { gateNote("Not saved. Nothing was cleared."); return; }
+          if (!ok) { gateNote("This browser wouldn't save the file. Nothing was cleared. Ask your teacher.", true); return; }
+          gateSaved = name; gateOpen("saved");
+        });
+      }, "primary-fork");
+      gateButton(acts, "Keep writing", "", gateClose);
+      return;
+    }
+    if (gateMode === "saved") {
+      title.textContent = "Can you see your file?";
+      var e1 = p("Saved as "); var b1 = document.createElement("b"); b1.textContent = gateSaved || ""; e1.appendChild(b1); e1.appendChild(document.createTextNode("."));
+      p("Check it's where you meant to put it. Once you clear this device, that file is the only copy of your work.");
+      gateButton(acts, "Yes, clear this device", "The next student starts fresh.", function () { clearDevice(); }, "danger-fork");
+      gateButton(acts, "Save it again", "", function () { gateOpen("finish"); });
+      gateButton(acts, "Keep writing", "", gateClose);
+      return;
+    }
+  }
+  var gateSaved = null;
+  /* The Save and finish button only exists on a shared device. */
+  function applySharedChrome() {
+    var b = document.getElementById("finishBtn");
+    if (b) b.style.display = sharedDevice() ? "" : "none";
+  }
+  function sharedBoot() {
+    if (EDITION !== "jr") return;
+    applySharedChrome();
+    var d = deviceInfo();
+    if (!d) { gateOpen("ask"); return; }
+    if (d.shared) gateOpen("start");
+  }
+  (function () {
+    var fb = document.getElementById("finishBtn");
+    if (fb) fb.addEventListener("click", function () { gateOpen("finish"); });
+    var fi = document.getElementById("gateFile");
+    fi.addEventListener("change", function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      var r = new FileReader();
+      r.onload = function () {
+        var ok = doRestore(String(r.result));
+        if (!ok) { gateNote("That file couldn't be opened. Make sure it's the one WriteNow Jr. saved for you.", true); return; }
+        var dd = deviceInfo() || {}; dd.shared = true; dd.active = true; setDeviceInfo(dd);
+        gateClose();
+        renderCourseBadge();
+        setView(state.settings.lastView || "map");
+        var c = state.course, L = (c && c.enrolled && c.step < CL().length) ? CL()[c.step] : null;
+        var nm = studentName();
+        showToastOnce("Welcome back" + (nm ? ", " + nm : "") + (/[.!?]$/.test(nm) ? "" : ".") + (L ? " You're on lesson " + (c.step + 1) + ": " + L.title + "." : ""));
+      };
+      r.readAsText(f);
+      this.value = "";
+    });
+    window.addEventListener("beforeunload", function (e) {
+      if (deviceClearing || !sharedDevice()) return;
+      var d = deviceInfo();
+      if (!d || !d.active || !deviceHasWork()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    });
+  })();
+
   function showToastOnce(msg) {
     var t = document.getElementById("shelfToast");
     if (!t) return;
@@ -5029,7 +5315,7 @@
     return !!SECTION_TOURS[k] && !s.all && !s.off && !s[k];
   }
   function anySheetOpen() {
-    var ids = ["courseSheet", "dailyCard", "courseDone", "recapSheet"];
+    var ids = ["courseSheet", "dailyCard", "courseDone", "recapSheet", "gateSheet"];
     for (var i = 0; i < ids.length; i++) {
       var el = document.getElementById(ids[i]);
       if (el && el.classList.contains("open")) return true;
@@ -6202,6 +6488,7 @@
       state.books = Array.isArray(d.books) ? d.books : null;
       state.series = Array.isArray(d.series) ? d.series : [];
       state.activeBook = d.activeBook || null;
+      state.student = d.student || null;
       if (d.map && typeof d.map === "object") {
         state.map = { nodes: Array.isArray(d.map.nodes) ? d.map.nodes : [],
                       edges: Array.isArray(d.map.edges) ? d.map.edges : [],
@@ -6529,6 +6816,7 @@
     el.lastChild.nodeValue = text;
   }
   function save() {
+    if (deviceClearing) return;
     /* courseCheck is called from the save tail, not here, to avoid recursion */
     setSaveState("saving", "Saving");
     if (saveTimer) clearTimeout(saveTimer);
@@ -9349,6 +9637,13 @@
   function renderTeachers() {
     var host = document.getElementById("teacherSheets");
     if (!host || EDITION !== "jr") return;
+    var dev = document.getElementById("teacherDevice");
+    dev.innerHTML = "";
+    learnRow(dev, "Students take turns on this device", sharedDevice() ? "On. Save and finish is at the top of the screen." : "Off. Work stays on this device.", "", function () {
+      if (sharedDevice()) setDeviceInfo({ shared: false });
+      else setDeviceInfo({ shared: true, active: deviceHasWork() });
+      applySharedChrome(); renderTeachers();
+    }, sharedDevice());
     host.innerHTML = "";
     var note = document.getElementById("teacherNote");
     ["fiction", "story", "teach"].forEach(function (k) {
@@ -9742,6 +10037,11 @@
     var out = JSON.parse(JSON.stringify(state));
     out.app = "chapter-guide";
     out.backupVersion = 1;
+    /* Which walkthroughs this writer has seen travels with their work, so a
+       student opening their file on a shared device is not walked through
+       every screen again. */
+    out.toursSeen = toursSeen();
+    try { out.tutorialSeen = !!localStorage.getItem(TUTORIAL_KEY); } catch (e) { out.tutorialSeen = false; }
     out.savedAt = new Date().toISOString();
     return JSON.stringify(out);
   }
@@ -9814,6 +10114,11 @@
       state.books = Array.isArray(d.books) ? d.books : null;
       state.series = Array.isArray(d.series) ? d.series : [];
       state.activeBook = d.activeBook || null;
+      state.student = d.student || null;
+      if (d.toursSeen && typeof d.toursSeen === "object") {
+        try { localStorage.setItem(TOURS_KEY, JSON.stringify(d.toursSeen)); } catch (e) {}
+      }
+      if (d.tutorialSeen) { try { localStorage.setItem(TUTORIAL_KEY, "1"); } catch (e) {} }
       state.map = (d.map && typeof d.map === "object")
         ? { nodes: Array.isArray(d.map.nodes) ? d.map.nodes : [], edges: Array.isArray(d.map.edges) ? d.map.edges : [],
             frames: Array.isArray(d.map.frames) ? d.map.frames : [], view: d.map.view || { x: 0, y: 0, z: 1 } }
@@ -9828,9 +10133,11 @@
         : "Restored: " + plural(state.chapters.length, "chapter") + " and " + plural(state.codex.length, "Codex entry", "Codex entries") + ".";
       note.className = "set-note ok";
       document.getElementById("restoreArea").value = "";
+      return true;
     } catch (e) {
       note.textContent = "Backup file unreadable \u2014 it may be truncated or from another app. Your current work is untouched.";
       note.className = "set-note err";
+      return false;
     }
   }
 
@@ -12129,6 +12436,7 @@
     state.books = Array.isArray(d.books) ? d.books : null;
     state.series = Array.isArray(d.series) ? d.series : [];
     state.activeBook = d.activeBook || null;
+    state.student = d.student || null;
     if (d.map && typeof d.map === "object") {
       state.map = { nodes: Array.isArray(d.map.nodes) ? d.map.nodes : [],
                     edges: Array.isArray(d.map.edges) ? d.map.edges : [],
@@ -12629,7 +12937,9 @@
       var seededOnce = localStorage.getItem(SEEDED_FLAG);
       var isNewUser = state.chapters.length === 0 && state.codex.length === 0 &&
                       state.ledger.length === 0 && state.map.nodes.length === 0;
-      if (!seededOnce && isNewUser) {
+      if (sharedGatePending()) {
+        setTimeout(sharedBoot, 200);
+      } else if (!seededOnce && isNewUser) {
         setTimeout(openTour, 260);
       }
     } catch (e) {}

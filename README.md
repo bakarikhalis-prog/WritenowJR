@@ -51,7 +51,14 @@ Open **Settings → For teachers** inside the app. You'll find:
 
 **Handing in work.** In the Book tab, students can copy their whole piece to paste into a document or an email, or save it as a file that prints cleanly. From the books button at the top, **Export this book** saves a single book as a file you can collect.
 
-**Shared devices.** Each student can keep their own book on the shelf, but the course progress, the writing schedule and the daily word count belong to the device, not the book. One device per student works best. On a shared device, students should take a backup (Settings → Backup & Restore) at the end of each session.
+**Shared devices.** The first time WriteNow Jr. opens, it asks who uses the device. Choose **Students take turns** for a class set, a library computer or a shared iPad. You can switch it later under Settings → For teachers. On a shared device:
+
+- The app opens on a start screen. Students tap **Open my work** and pick the file they saved last time, or **I'm new here** and type their first name and last initial.
+- Everything comes back from the file: their writing, which lesson they're on, their writing days and the walkthroughs they've already seen.
+- When they're done, they tap **Save & finish** at the top of the screen. The app saves one file with their name on it, asks them to check it's there, then clears the device so the next student starts fresh and can't see anything.
+- If a student leaves without finishing, the next student sees a notice and can save that work to the device as a file for you before starting.
+
+Have students save their file somewhere that's theirs: their school Google Drive or OneDrive, a USB stick, or a class folder you collect. On a shared device the Downloads folder is shared too. On Chromebooks where students sign in with their own school account, each account already keeps its own work, so shared mode isn't needed there.
 
 **Safety.** The lessons are written for this age group. The true-story lessons encourage students to choose memories they are comfortable sharing, to be fair to real people, and to talk to a parent, teacher or school counselor before writing about something that still feels hard or scary.
 
